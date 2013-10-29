@@ -62,6 +62,12 @@ class TestAcceptance(TestCase):
             render(u"{{! Goodbye}}Goodbye\n{{cruel}}\n{{world}}!",
                 {'cruel': "cruel", 'world': "world"}))
 
+    def test_whitespace_ignored(self):
+        self.assertEqual(
+            "Goodbye\ncruel\nworld!",
+            render(u"Goodbye\n{{ cruel }}\n{{\tworld }}!",
+                {'cruel': "cruel", 'world': "world"}))
+
     def test_booleans(self):
         template = u"{{#goodbye}}GOODBYE {{/goodbye}}cruel {{world}}!"
         self.assertEqual(
@@ -264,6 +270,13 @@ class TestAcceptance(TestCase):
 
     def test_block_helper(self):
         template = u"{{#goodbyes}}{{text}}! {{/goodbyes}}cruel {{world}}!"
+        self.assertEqual(
+            u"GOODBYE! cruel world!",
+            render(template, {'world': "world"}, helpers={'goodbyes':
+                lambda this, options: options['fn']({'text': "GOODBYE"})}))
+
+    def test_block_helper_ignores_whitespace(self):
+        template = u"{{# goodbyes }}{{ text }}! {{/ goodbyes }}cruel {{ world }}!"
         self.assertEqual(
             u"GOODBYE! cruel world!",
             render(template, {'world': "world"}, helpers={'goodbyes':
