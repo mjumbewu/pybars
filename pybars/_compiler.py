@@ -178,19 +178,16 @@ sentinel = object()
 
 class Scope:
 
-    def __init__(self, context, parent, index=None, key=None):
+    def __init__(self, context, parent, **kwargs):
         self.context = context
         self.parent = parent
-        self.index = index
-        self.key = key
+        self.env = kwargs
 
     def get(self, name, default=None):
         if name == '__parent':
             return self.parent
-        if name == '@index' and self.index is not None:
-            return self.index
-        if name == '@key' and self.key is not None:
-            return self.key
+        if str_class(name).startswith('@'):
+            return self.env.get(name[1:], default)
         if name == 'this':
             return self.context
 
