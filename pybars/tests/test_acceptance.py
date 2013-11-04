@@ -137,8 +137,8 @@ class TestAcceptance(TestCase):
 
     def test_literal_paths_can_be_used(self):
         self.assertEqual(u"Goodbye beautiful world!",
-            render(u"Goodbye {{[@alan]/expression}} world!",
-                {'@alan': {'expression': 'beautiful'}}))
+            render(u"Goodbye {{[alan]/expression}} world!",
+                {'alan': {'expression': 'beautiful'}}))
 
     def skipped_upstream_not_ported_bad_idea_nested_paths(self):
         pass
@@ -650,6 +650,18 @@ class TestAcceptance(TestCase):
         self.assertEqual(
             "0. goodbye! 0 1 2 After 0 1. Goodbye! 0 1 2 After 1 2. GOODBYE! 0 1 2 After 2 cruel world!",
             render(source, context))
+
+    def test_each_context_depth(self):
+        template = u"{{#each families}}{{#each people}}{{../../label}}: {{name}}{{/each}} {{name}}\n{{/each}}"
+        self.assertEqual("Name: Yehuda Katz\nName: Carl Lerche\nName: Alan Johnson\n",
+            render(template, {
+                'label': 'Name',
+                'families': [
+                    {'people': [{'name': "Yehuda"}], 'name': 'Katz'},
+                    {'people': [{'name': "Carl"}], 'name': 'Lerche'},
+                    {'people': [{'name': "Alan"}], 'name': 'Johnson'},
+                ]
+            }))
 
     def test_log(self):
         source = u"{{log blah}}"
