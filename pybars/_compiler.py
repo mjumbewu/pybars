@@ -194,7 +194,7 @@ class Scope:
 
         try:
             return self.context[name]
-        except KeyError:
+        except (KeyError, TypeError):
             return default
     __getitem__ = get
 
