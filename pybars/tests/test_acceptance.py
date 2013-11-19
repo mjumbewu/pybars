@@ -798,3 +798,31 @@ class TestAcceptance(TestCase):
             }
         expected = "<strong>This is a slightly more complicated blah.</strong>.\n\nCheck this out:\n\n<ul>\n\n<li class=one>@fat</li>\n\n<li class=two>@dhg</li>\n\n<li class=three>@sayrer</li>\n</ul>.\n\n"
         self.assertEqual(expected, render(source, context))
+
+
+class TestDataHash (TestCase):
+    # def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_helpers(self):
+    #     template = Compiler().compile(u"{{hello}}");
+
+    #     def _hello(this, options):
+    #         return ' '.join([
+    #             options.data['adjective'], this['noun']])
+
+    #     result = template({'noun': "cat"}, helpers={'hello': _hello}, data={'adjective': "happy"})
+    #     self.assertEqual("happy cat", result, "Data output by helper")
+
+    def test_data_can_be_looked_up_via__foo(self):
+        template = Compiler().compile(u"{{@hello}}")
+        result = template({}, data={'hello': "hello"})
+        self.assertEqual("hello", str_class(result))
+
+    def test_deep__foo_triggers_automatic_top_level_data(self):
+        template = Compiler().compile(u'{{#let world="world"}}{{#if foo}}{{#if foo}}Hello {{@world}}{{/if}}{{/if}}{{/let}}');
+
+        def _let(this, options, **kwargs):
+            return options['fn'](this, **kwargs)
+        helpers = {'let': _let}
+
+        result = template({ 'foo': True }, helpers=helpers);
+        self.assertEqual("Hello world", str_class(result));
+

@@ -178,17 +178,17 @@ sentinel = object()
 
 class Scope:
 
-    def __init__(self, context, parent, **kwargs):
+    def __init__(self, context, parent, data):
         # We should never get a scope object for context, but just in case...
         self.context = context.context if isinstance(context, Scope) else context
         self.parent = parent
-        self.env = kwargs
+        self.data = data or {}
 
     def get(self, name, default=None):
         if name == '__parent':
             return self.parent
         if str_class(name).startswith('@'):
-            return self.env.get(name[1:], default)
+            return self.data.get(name[1:], default)
         if name == 'this':
             return self.context
         result = self.context.get(name, self)
@@ -308,14 +308,23 @@ class CodeBuilder:
         # disabled test showing arbitrary complex path manipulation: the scope
         # approach used here will probably DTRT but may be slower: reevaluate
         # when profiling.
-        self._result.grow(u"def render(this, helpers=None, partials=None, parent=None, **kwargs):\n")
-        self._result.grow(u"    scope = Scope(this, parent, **kwargs)\n")
+        self._result.grow(u"def render(this, helpers=None, partials=None, parent=None, data=None):\n")
+        self._result.grow(u"    scope = Scope(this, parent, data)\n")
         self._result.grow(u"    result = strlist()\n")
         self._result.grow(u"    _helpers = dict(pybars['helpers'])\n")
         self._result.grow(u"    if helpers is not None: _helpers.update(helpers)\n")
         self._result.grow(u"    helpers = _helpers\n")
         self._result.grow(u"    if partials is None: partials = {}\n")
-        
+        self._result.grow(u"    if data is None: data = {}\n")
+
+        self._result.grow(u"    def process_nested_render(nested_render):\n")
+        self._result.grow(u"        def fn(this, **kwargs):\n")
+        self._result.grow(u"            nested_data = data.copy()\n")
+        self._result.grow(u"            nested_data.update(kwargs)\n")
+        self._result.grow(u"            return nested_render(this, helpers=helpers, partials=partials, parent=scope, data=nested_data)\n")
+        self._result.grow(u"        return fn\n")
+
+
         # Expose used functions and helpers to the template.
         self._locals['strlist'] = strlist
         self._locals['escape'] = escape
@@ -345,7 +354,7 @@ class CodeBuilder:
         inherit the set of helpers and partials automatically, and should have
         the parent scope implicitly set to the current scope.
         """
-        return u"partial(%s, helpers=helpers, partials=partials, parent=scope)" % name
+        return u"process_nested_render(%s)" % name
 
     def add_block(self, symbol, arguments, nested, alt_nested):
         name = self.allocate_value(nested)
@@ -356,6 +365,8 @@ class CodeBuilder:
             u"    options = {'fn': %s}\n" % self._wrap_nested(name),
             u"    options['helpers'] = helpers\n"
             u"    options['partials'] = partials\n"
+            u"    options['parent'] = parent\n"
+            u"    options['data'] = data\n"
             ])
         if alt_nested:
             self._result.grow([
@@ -418,13 +429,13 @@ class CodeBuilder:
             self._result.grow(u"    value = %s\n" % path)
         self._result.grow([
             u"    if callable(value):\n"
-            u"        child_scope = Scope(this, scope)\n"
+            u"        child_scope = Scope(this, scope, data)\n"
             u"        value = value(child_scope, %s\n" % call,
             ])
         if realname:
             self._result.grow(
                 u"    elif value is None:\n"
-                u"        child_scope = Scope(this, scope)\n"
+                u"        child_scope = Scope(this, scope, data)\n"
                 u"        value = helpers.get('helperMissing')(child_scope, '%s', %s\n"
                     % (realname, call)
                 )
@@ -470,7 +481,7 @@ class CodeBuilder:
             fn_name,
             u"(",
             this_name,
-            u", helpers=helpers, partials=partials, parent=", scope_name, "))\n"
+            u", helpers=helpers, partials=partials, parent=", scope_name, ", data=data))\n"
             ])
 
     def add_partial(self, symbol, arguments):
