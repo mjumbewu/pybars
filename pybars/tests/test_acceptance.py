@@ -902,4 +902,72 @@ class TestDataHash (TestCase):
         result = template({'noun': "cat"}, helpers=helpers, partials=partials, data={'adjective': "happy"});
         self.assertEqual("happy cat", str_class(result));
 
+    def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_helpers_and_parameters(self):
+        template = Compiler().compile(u"{{hello world}}");
 
+        def _hello(this, noun):
+            return '%s %s%s' % (this.data['adjective'], noun, '!' if this['exclaim'] else '')
+        helpers = {'hello': _hello}
+
+        result = template({'exclaim': True, 'world': "world"}, helpers=helpers, data={'adjective': "happy"})
+        self.assertEqual("happy world!", str_class(result))
+
+    def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_block_helpers(self):
+        template = Compiler().compile(u"{{#hello}}{{world}}{{/hello}}");
+
+        def _hello(this, options):
+            return options['fn'](this)
+        def _world(this):
+            return '%s world%s' % (this.data['adjective'], '!' if this['exclaim'] else '')
+        helpers = {'hello': _hello, 'world': _world}
+
+        result = template({'exclaim': True}, helpers=helpers, data={'adjective': "happy"})
+        self.assertEqual("happy world!", str_class(result))
+
+    def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_block_helpers_that_use__parent(self):
+        template = Compiler().compile(u"{{#hello}}{{world ../zomg}}{{/hello}}")
+
+        def _hello(this, options):
+            return options['fn']({'exclaim': "?"})
+        def _world(this, thing):
+            return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
+        helpers = {'hello': _hello, 'world': _world}
+
+        result = template({'exclaim': True, 'zomg': "world"}, helpers=helpers, data={'adjective': "happy"})
+        self.assertEqual("happy world?", str_class(result))
+
+    def test_passing_in_data_to_a_compiled_function_that_expects_data_is_passed_to_with_block_helpers_where_children_use__parent(self):
+        template = Compiler().compile(u"{{#hello}}{{world ../zomg}}{{/hello}}")
+
+        def _hello(this, options):
+            return '%s %s' % (this.data['accessData'], options['fn']({'exclaim': '?'}))
+        def _world(this, thing):
+            return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
+        helpers = {'hello': _hello, 'world': _world}
+
+        result = template({'exclaim': True, 'zomg': "world"}, helpers=helpers, data={'adjective': "happy", 'accessData': "#win"})
+        self.assertEqual("#win happy world?", str_class(result))
+
+    def test_you_can_override_inherited_data_when_invoking_a_helper(self):
+        template = Compiler().compile(u"{{#hello}}{{world zomg}}{{/hello}}")
+
+        def _hello(this, options):
+            return options['fn']({'exclaim': '?', 'zomg': 'world'}, adjective='sad')
+        def _world(this, thing):
+            return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
+        helpers = {'hello': _hello, 'world':  _world}
+
+        result = template({'exclaim': True, 'zomg': "planet"}, helpers=helpers, data={'adjective': "happy"});
+        self.assertEqual("sad world?", str_class(result))
+
+    def test_you_can_override_inherited_data_when_invoking_a_helper_with_depth(self):
+        template = Compiler().compile(u"{{#hello}}{{world ../zomg}}{{/hello}}");
+
+        def _hello(this, options):
+            return options['fn']({'exclaim': '?', 'zomg': 'world'}, adjective='sad')
+        def _world(this, thing):
+            return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
+        helpers = {'hello': _hello, 'world':  _world}
+
+        result = template({'exclaim': True, 'zomg': "world"}, helpers=helpers, data={'adjective': "happy"});
+        self.assertEqual("sad world?", str_class(result));
