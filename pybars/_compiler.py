@@ -118,8 +118,8 @@ escapedexpand ::= [ "escapedexpand" <path>:value [<arg>*:arguments]] => builder.
 invertedblock ::= [ "invertedblock" <anything>:symbol [<arg>*:arguments] [<compile>:t] ] => builder.add_invertedblock(symbol, arguments, t)
 partial ::= ["partial" <anything>:symbol [<arg>*:arguments]] => builder.add_partial(symbol, arguments)
 path ::= [ "path" [<pathseg>:segment]] => ("simple", segment)
- | [ "path" [<pathseg>+:segments] ] => ("complex", u'resolve(scope, "'  + u'","'.join(segments) + u'")' )
-simplearg ::= [ "path" [<pathseg>+:segments] ] => u'resolve(scope, "'  + u'","'.join(segments) + u'")'
+ | [ "path" [<pathseg>+:segments] ] => ("complex", u'resolve(this, "'  + u'","'.join(segments) + u'")' )
+simplearg ::= [ "path" [<pathseg>+:segments] ] => u'resolve(this, "'  + u'","'.join(segments) + u'")'
     | [ "literalparam" <anything>:value ] => {str_class}(value)
 arg ::= [ "kwparam" <anything>:symbol <simplearg>:a ] => {str_class}(symbol) + '=' + a
     | <simplearg>
@@ -180,17 +180,17 @@ sentinel = object()
 
 class Scope:
 
-    def __init__(self, context, parent, **kwargs):
+    def __init__(self, context, parent, data):
         # We should never get a scope object for context, but just in case...
         self.context = context.context if isinstance(context, Scope) else context
         self.parent = parent
-        self.env = kwargs
+        self.data = data or {}
 
     def get(self, name, default=None):
         if name == '__parent':
             return self.parent
         if str_class(name).startswith('@'):
-            return self.env.get(name[1:], default)
+            return self.data.get(name[1:], default)
         if name == 'this':
             return self.context
 
@@ -207,6 +207,9 @@ class Scope:
     # Only called in Python 2
     def __unicode__(self):
         return unicode(self.context)
+
+    def __repr__(self):
+        return u'<pybars.Scope context=%r data=%r>' % (self.context, self.data)
 
 
 def resolve(context, *segments):
@@ -331,14 +334,38 @@ class CodeBuilder:
         # disabled test showing arbitrary complex path manipulation: the scope
         # approach used here will probably DTRT but may be slower: reevaluate
         # when profiling.
-        self._result.grow(u"def render(this, helpers=None, partials=None, parent=None, **kwargs):\n")
-        self._result.grow(u"    scope = Scope(this, parent, **kwargs)\n")
+        self._result.grow(u"def render(this, helpers=None, partials=None, parent=None, data=None):\n")
+
+        # Initialize the end result
         self._result.grow(u"    result = strlist()\n")
+
+        # Initialize the helpers, parials, and data
         self._result.grow(u"    _helpers = dict(pybars['helpers'])\n")
         self._result.grow(u"    if helpers is not None: _helpers.update(helpers)\n")
         self._result.grow(u"    helpers = _helpers\n")
         self._result.grow(u"    if partials is None: partials = {}\n")
-        
+        self._result.grow(u"    if data is None: data = {}\n")
+
+        # Even if the `this` is already a Scope object, create a new Scope
+        # object because the paraent and data attributes may differ for this
+        # context.
+        self._result.grow(u"    if isinstance(this, Scope):\n")
+        self._result.grow(u"        this = Scope(this.context, parent, data)\n")
+        self._result.grow(u"    else:\n")
+        self._result.grow(u"        this = Scope(this, parent, data)\n")
+
+        # Create a decorator function for nested calls to render. These may be
+        # partials or block helpers. They differ from calls to the normal
+        # render method in that (1) the data attribute is specified in the
+        # kwargs, and (2) the helpers, partials, and parent scope are all set
+        # implicitly.
+        self._result.grow(u"    def process_nested_render(nested_render):\n")
+        self._result.grow(u"        def fn(inner_context, **kwargs):\n")
+        self._result.grow(u"            nested_data = data.copy()\n")
+        self._result.grow(u"            nested_data.update(kwargs)\n")
+        self._result.grow(u"            return nested_render(inner_context, helpers=helpers, partials=partials, parent=this, data=nested_data)\n")
+        self._result.grow(u"        return fn\n")
+
         # Expose used functions and helpers to the template.
         self._locals['strlist'] = strlist
         self._locals['escape'] = escape
@@ -368,7 +395,7 @@ class CodeBuilder:
         inherit the set of helpers and partials automatically, and should have
         the parent scope implicitly set to the current scope.
         """
-        return u"partial(%s, helpers=helpers, partials=partials, parent=scope)" % name
+        return u"process_nested_render(%s)" % name
 
     def add_block(self, symbol, arguments, nested, alt_nested):
         name = self.allocate_value(nested)
@@ -393,7 +420,7 @@ class CodeBuilder:
         self._result.grow([
             u"    value = helper = helpers.get('%s')\n" % symbol,
             u"    if value is None:\n"
-            u"        value = scope.get('%s')\n" % symbol,
+            u"        value = this.get('%s')\n" % symbol,
             u"    if helper and callable(helper):\n"
             u"        value = helper(this, options, %s\n" % call,
             u"    else:\n"
@@ -413,7 +440,7 @@ class CodeBuilder:
         the current context as the argument.
         """
         if not arg:
-            return u"scope.context"
+            return u"this.context"
         return arg
 
     def arguments_to_call(self, arguments):
@@ -429,25 +456,25 @@ class CodeBuilder:
             self._result.grow([
                 u"    value = helpers.get('%s')\n" % realname,
                 u"    if value is None:\n"
-                u"        value = resolve(scope, '%s')\n" % path,
+                u"        value = resolve(this, '%s')\n" % path,
                 ])
         elif path_type == "simple":
             realname = None
             self._result.grow([
-                u"    value = resolve(scope, '%s')\n" % path,
+                u"    value = resolve(this, '%s')\n" % path,
                 ])
         else:
             realname = None
             self._result.grow(u"    value = %s\n" % path)
         self._result.grow([
             u"    if callable(value):\n"
-            u"        child_scope = Scope(this, scope)\n"
+            u"        child_scope = Scope(this.context, this, data)\n"
             u"        value = value(child_scope, %s\n" % call,
             ])
         if realname:
             self._result.grow(
                 u"    elif value is None:\n"
-                u"        child_scope = Scope(this, scope)\n"
+                u"        child_scope = Scope(this.context, this, data)\n"
                 u"        value = helpers.get('helperMissing')(child_scope, '%s', %s\n"
                     % (realname, call)
                 )
@@ -480,20 +507,19 @@ class CodeBuilder:
         # This may need to be a blockHelperMissing clal as well.
         name = self.allocate_value(nested)
         self._result.grow([
-            u"    value = scope.get('%s')\n" % symbol,
+            u"    value = this.get('%s')\n" % symbol,
             u"    if not value:\n"
             u"    "])
-        self._invoke_template(name, "this", "scope")
+        self._invoke_template(name, "this.context", "this")
 
-    def _invoke_template(self, fn_name, this_name, scope_name):
+    def _invoke_template(self, fn_name, context_name, scope_name):
         """
         """
         self._result.grow([
             u"    result.grow(",
             fn_name,
-            u"(",
-            this_name,
-            u", helpers=helpers, partials=partials, parent=", scope_name, "))\n"
+            u"(Scope(", context_name, u", ", scope_name, u", data)",
+            u", helpers=helpers, partials=partials, parent=", scope_name, ", data=data))\n"
             ])
 
     def add_partial(self, symbol, arguments):
@@ -504,7 +530,7 @@ class CodeBuilder:
             arg = ""
         self._result.append(
             u"    inner = partials['%s']\n" % symbol)
-        self._invoke_template("inner", self._lookup_arg(arg), "scope")
+        self._invoke_template("inner", self._lookup_arg(arg), "this")
 
 
 class Compiler:
