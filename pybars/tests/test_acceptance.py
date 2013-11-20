@@ -801,15 +801,14 @@ class TestAcceptance(TestCase):
 
 
 class TestDataHash (TestCase):
-    # def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_helpers(self):
-    #     template = Compiler().compile(u"{{hello}}");
+    def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_helpers(self):
+        template = Compiler().compile(u"{{hello}}");
 
-    #     def _hello(this, options):
-    #         return ' '.join([
-    #             options.data['adjective'], this['noun']])
+        def _hello(this):
+            return ' '.join([this.data['adjective'], this['noun']])
 
-    #     result = template({'noun': "cat"}, helpers={'hello': _hello}, data={'adjective': "happy"})
-    #     self.assertEqual("happy cat", result, "Data output by helper")
+        result = template({'noun': "cat"}, helpers={'hello': _hello}, data={'adjective': "happy"})
+        self.assertEqual("happy cat", str_class(result))
 
     def test_data_can_be_looked_up_via__foo(self):
         template = Compiler().compile(u"{{@hello}}")
@@ -825,4 +824,82 @@ class TestDataHash (TestCase):
 
         result = template({ 'foo': True }, helpers=helpers);
         self.assertEqual("Hello world", str_class(result));
+
+    def test_parameter_data_can_be_looked_up_via__foo(self):
+        template = Compiler().compile(u"{{hello @world}}");
+        def _hello(this, noun):
+            return strlist(['Hello ', noun])
+        helpers = {'hello': _hello}
+
+        result = template({}, helpers=helpers, data={ 'world': "world" });
+        self.assertEqual("Hello world", str_class(result));
+
+    def test_hash_values_can_be_looked_up_via__foo(self):
+        template = Compiler().compile(u"{{hello noun=@world}}");
+        def _hello(this, noun=''):
+            return strlist(['Hello ', noun])
+        helpers = {'hello': _hello}
+
+        result = template({}, helpers=helpers, data={ 'world': "world" });
+        self.assertEqual("Hello world", str_class(result));
+
+    def test_nested_parameter_data_can_be_looked_up_via__foo_bar(self):
+        template = Compiler().compile(u"{{hello @world.bar}}");
+        def _hello(this, noun):
+            return strlist(['Hello ', noun])
+        helpers = {'hello': _hello}
+
+        result = template({}, helpers=helpers, data={ 'world': {'bar': "world" } });
+        self.assertEqual("Hello world", str_class(result));
+
+    def test_nested_parameter_data_does_not_fail_with__world_bar(self):
+        template = Compiler().compile(u"{{hello @world.bar}}");
+        def _hello(this, noun):
+            return 'Hello %s' % (noun,)
+        helpers = {'hello': _hello}
+
+        result = template({}, helpers=helpers, data={ 'foo': {'bar': "world" } });
+        self.assertEqual("Hello None", str_class(result));
+
+    # def test_parameter_data_throws_when_using_this_scope_references(self):
+    #     string = u"{{#goodbyes}}{{text}} cruel {{@./name}}! {{/goodbyes}}";
+
+    #     from pymeta.grammar import ParseError
+    #     self.assertRaises(ParseError, Compiler().compile, string)
+
+    # def test_parameter_data_throws_when_using_parent_scope_references(self):
+    #     string = u"{{#goodbyes}}{{text}} cruel {{@../name}}! {{/goodbyes}}";
+
+    #     from pymeta.grammar import ParseError
+    #     self.assertRaises(ParseError, Compiler().compile, string)
+
+    # def test_parameter_data_throws_when_using_complex_scope_references(self):
+    #     string = u"{{#goodbyes}}{{text}} cruel {{@goo/../name}}! {{/goodbyes}}";
+
+    #     from pymeta.grammar import ParseError
+    #     self.assertRaises(ParseError, Compiler().compile, string)
+
+    def test_data_is_inherited_downstream(self):
+        template = Compiler().compile(u"{{#let foo=1 bar=2}}{{#let foo=bar.baz}}{{@bar}}{{@foo}}{{/let}}{{@foo}}{{/let}}");
+        def _let(this, options, **kwargs):
+            return options['fn'](this, **kwargs)
+        helpers = {'let': _let}
+
+        result = template({ 'bar': { 'baz': "hello world" } }, helpers=helpers, data={})
+        self.assertEqual("2hello world1", str_class(result));
+
+    def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_helpers_in_partials(self):
+        template = Compiler().compile(u"{{>my_partial}}");
+
+        partials = {
+          'my_partial': Compiler().compile(u"{{hello}}")
+        }
+
+        def _hello(this):
+            return ' '.join([this.data['adjective'], this['noun']])
+        helpers = {'hello': _hello}
+
+        result = template({'noun': "cat"}, helpers=helpers, partials=partials, data={'adjective': "happy"});
+        self.assertEqual("happy cat", str_class(result));
+
 
