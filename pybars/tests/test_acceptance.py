@@ -837,6 +837,14 @@ class TestAcceptance(TestCase):
         expected = "<strong>This is a slightly more complicated blah.</strong>.\n\nCheck this out:\n\n<ul>\n\n<li class=one>@fat</li>\n\n<li class=two>@dhg</li>\n\n<li class=three>@sayrer</li>\n</ul>.\n\n"
         self.assertEqual(expected, render(source, context))
 
+    def test_invalid_template_1(self):
+        source = u'{{x "\\x"}}'
+        self.assertEqual('', render(source, {}))
+
+    def test_invalid_template_2(self):
+        source = u'{{foo 0x="bar"}}'
+        self.assertEqual('', render(source, {}))
+
 
 class TestDataHash (TestCase):
     def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_helpers(self):
