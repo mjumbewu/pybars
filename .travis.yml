@@ -5,7 +5,7 @@ python:
 
 # command to install dependencies
 install:
-  - pip install nose testtools coverage
+  - pip install nose mock coverage
   - pip install git+https://github.com/mjumbewu/pymeta.git
 
 # command to run tests

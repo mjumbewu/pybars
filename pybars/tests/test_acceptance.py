@@ -20,8 +20,8 @@
 
 """A port of the acceptance test for handlebars.js."""
 
-from testtools import TestCase
-from testtools.matchers import Equals
+from unittest import TestCase
+from mock import patch
 
 try:
     str_class = unicode
@@ -39,16 +39,11 @@ from pybars import (
 from pybars.tests.test__compiler import render
 
 
-class RendersItself:
-
-    def __str__(self):
-        return "RendersItself()"
-
-    def match(self, source):
-        return Equals(source).match(render(source, {}))
-
-
 class TestAcceptance(TestCase):
+
+    def assertRendersItself(self, source):
+        rendering = render(source, {})
+        self.assertEqual(source, rendering, '%r should render itself: %r' % (source, rendering))
 
     def test_basic_context(self):
         self.assertEqual(
@@ -80,16 +75,16 @@ class TestAcceptance(TestCase):
             render(u"num: {{num1/num2}}", {'num1': {'num2': 0}}))
 
     def test_newlines(self):
-        self.assertThat(u"Alan's\nTest", RendersItself())
-        self.assertThat(u"Alan's\rTest", RendersItself())
+        self.assertRendersItself(u"Alan's\nTest")
+        self.assertRendersItself(u"Alan's\rTest")
 
     def test_escaping_text(self):
-        self.assertThat(u"Awesome's", RendersItself())
-        self.assertThat(u"Awesome\\", RendersItself())
-        self.assertThat(u"Awesome\\\\ foo", RendersItself())
+        self.assertRendersItself(u"Awesome's")
+        self.assertRendersItself(u"Awesome\\")
+        self.assertRendersItself(u"Awesome\\\\ foo")
         self.assertEqual(u"Awesome \\",
             render(u"Awesome {{foo}}", {'foo': '\\'}))
-        self.assertThat(u' " " ', RendersItself())
+        self.assertRendersItself(u' " " ')
 
     def test_escaping_expressions(self):
         self.assertEqual('&\"\\<>',
@@ -682,9 +677,9 @@ class TestAcceptance(TestCase):
         source = u"{{log blah}}"
         context = {'blah': "whee"}
         log = []
-        self.patch(pybars, 'log', log.append)
-        self.assertEqual("", render(source, context))
-        self.assertEqual(["whee"], log)
+        with patch('pybars.log', log.append):
+            self.assertEqual("", render(source, context))
+            self.assertEqual(["whee"], log)
 
     def test_overriding_property_lookup(self):
         pass
