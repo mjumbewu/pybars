@@ -10,8 +10,7 @@ install:
 
 # command to run tests
 script:
-  - coverage run $(which nosetests)
+  - coverage run --source=pybars $(which nosetests)
 after_success:
-  - coverage report --include=pybars/*
   - pip install --quiet coveralls
   - coveralls
