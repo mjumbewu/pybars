@@ -842,13 +842,13 @@ class TestAcceptance(TestCase):
         self.assertEqual('', render(source, {}))
 
     def test_backslash_does_not_normally_escape_text(self):
-        source = ur'{{echo "\x"}}'
-        self.assertEqual(r'\x', render(source, {}, helpers={'echo': (lambda this, arg: arg)}))
+        source = u'{{echo "\\x"}}'
+        self.assertEqual('\\x', render(source, {}, helpers={'echo': (lambda this, arg: arg)}))
 
     def test_backslash_only_escapes_quote(self):
         # Notice that the following is a raw string. It is a helper, 'echo',
         # with a string argument equal to a backslash and an escaped quote.
-        source = ur'{{echo "\\""}}'
+        source = u'{{echo "\\\\""}}'
         # If the parser does not know to escape the backslash but does know to
         # escape the quote, it will end up with something like the following
         # in our generated rendering code:
