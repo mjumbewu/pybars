@@ -13,5 +13,5 @@ script:
   - coverage run $(which nosetests)
 after_success:
   - coverage report --include=pybars/*
-  - pip install --quiet python-coveralls
+  - pip install --quiet coveralls
   - coveralls
