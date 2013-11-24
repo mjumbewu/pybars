@@ -3,6 +3,9 @@
 Pybars provides a template system for Python which is compatible with
 handlebars.js.
 
+[![Build Status](https://travis-ci.org/mjumbewu/pybars.png?branch=master)](https://travis-ci.org/mjumbewu/pybars)
+[![Coverage Status](https://coveralls.io/repos/mjumbewu/pybars/badge.png?branch=master)](https://coveralls.io/r/mjumbewu/pybars)
+
 ##Installation
 
 This Python 3 fork of pybars requires [pymeta](https://launchpad.com/pymeta)
