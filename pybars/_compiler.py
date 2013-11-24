@@ -81,10 +81,11 @@ integer ::= <digit>+:ds => int(''.join(ds))
 boolean ::= <false>|<true>
 false ::= 'f' 'a' 'l' 's' 'e' => False
 true ::= 't' 'r' 'u' 'e' => True
-notquote ::= <escapedquote> | (~('\\' | '"' | '\n' | '\r') <anything>)
+notquote ::= <escapedquote>
+    | '\\' => '\\\\'
+    | (~('"') <anything>)
 notclosebracket ::= (~(']') <anything>)
 escapedquote ::= '\\' '"' => '\\"'
-    | '\\' '\\' => '\\\\'
 safesymbol ::=  ~<alt_inner> '['? (<letter>|'_'):start (<letterOrDigit>|'_')+:symbol ']'? => start + u''.join(symbol)
 symbol ::=  ~<alt_inner> '['? (<letterOrDigit>|'-'|'@')+:symbol ']'? => u''.join(symbol)
 pathseg ::= '[' <notclosebracket>+:symbol ']' => u''.join(symbol)
