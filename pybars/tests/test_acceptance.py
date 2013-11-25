@@ -857,6 +857,13 @@ class TestAcceptance(TestCase):
         source = u'{{echo "Hello,\nWorld!"}}'
         self.assertEqual('Hello,\nWorld!', render(source, {}, helpers={'echo': (lambda this, arg: arg)}))
 
+    def test_code_injection(self):
+        # If esape sequences are not dealt with properly, we are able to run
+        # arbitrary Python code. Thanks to @thomasst for pointing this out:
+        # https://github.com/elasticsales/pybars/commit/3a262b8cd7902889cde5c786f76bb0c30f8894e6#commitcomment-4687173
+        source = u'{{echo "\\\\")\n\n        raise AssertionError(\'Code Injected!\')\n#"}}'
+        self.assertEqual('\\&quot;)\n\n        raise AssertionError(&#x27;Code Injected!&#x27;)\n#', render(source, {}, helpers={'echo': (lambda this, arg: arg)}))
+
 
 class TestDataHash (TestCase):
     def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_helpers(self):

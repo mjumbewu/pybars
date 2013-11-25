@@ -82,9 +82,9 @@ boolean ::= <false>|<true>
 false ::= 'f' 'a' 'l' 's' 'e' => False
 true ::= 't' 'r' 'u' 'e' => True
 notquote ::= <escapedquote>
-    | '\\' => '\\\\'
     | '\n' => '\\n'
     | '\r' => '\\r'
+    | '\\' => '\\\\'
     | (~('"') <anything>)
 notclosebracket ::= (~(']') <anything>)
 escapedquote ::= '\\' '"' => '\\"'
