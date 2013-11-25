@@ -853,6 +853,10 @@ class TestAcceptance(TestCase):
         # Which will raise a SyntaxError.
         self.assertEqual('\\&quot;', render(source, {}, helpers={'echo': (lambda this, arg: arg)}))
 
+    def test_newlines_in_string_litereals(self):
+        source = u'{{echo "Hello,\nWorld!"}}'
+        self.assertEqual('Hello,\nWorld!', render(source, {}, helpers={'echo': (lambda this, arg: arg)}))
+
 
 class TestDataHash (TestCase):
     def test_passing_in_data_to_a_compiled_function_that_expects_data_works_with_helpers(self):
