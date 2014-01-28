@@ -9,14 +9,11 @@ handlebars.js.
 ##Installation
 
 This Python 3 fork of pybars requires [pymeta](https://launchpad.com/pymeta)
-and [testtools](https://github.com/testing-cabal/testtools) that also run on
-Python 3. Currently this requires installing custom forks.
+that also run on Python 3. Currently this requires installing custom forks.
 
 ```bash
-pip install git+https://github.com/wbond/testtools
-pip install git+https://github.com/wbond/pymeta
-
-pip install git+https://github.com/wbond/pybars
+pip install git+https://github.com/mjumbewu/pymeta
+pip install git+https://github.com/mjumbewu/pybars
 ```
 
 ## Usage
@@ -120,12 +117,11 @@ to a string in a helper call.
 ## Dependencies
 
 * Python 2.6-2.7, 3.3+
-* PyMeta (Python 3 fork, https://github.com/wbond/pymeta)
+* PyMeta (Python 3 fork, https://github.com/mjumbewu/pymeta)
 
 ## Testing Dependencies
 
-* testtools (Python 3 fork, https://github.com/wbond/testtools)
-* subunit (http://pypi.python.org/pypi/python-subunit) (optional)
+* mock
 
 ## Development
 
