@@ -229,7 +229,10 @@ def resolve(context, *segments):
             offset = int(segment)
             context = context[offset]
         else:
-            context = context.get(segment)
+            try:
+                context = context.get(segment)
+            except AttributeError:
+                return None
     return context
 
 
