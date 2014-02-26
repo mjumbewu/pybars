@@ -268,7 +268,7 @@ def _each(this, options, context):
         size = len(context)
         for index, local_context in enumerate(context):
             result.grow(options['fn'](local_context,
-                index=index, first=index==0, last=index==(size - 1))
+                index=index, first=index==0, last=index==(size - 1)))
     else:
         return options['inverse'](this)
     return result
