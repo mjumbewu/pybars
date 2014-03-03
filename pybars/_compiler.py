@@ -205,6 +205,9 @@ class Scope:
             return default
     __getitem__ = get
 
+    def __len__(self):
+        return len(self.context)
+
     # Added for Python 3
     def __str__(self):
         return str(self.context)
