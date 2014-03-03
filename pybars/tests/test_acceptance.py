@@ -673,6 +673,89 @@ class TestAcceptance(TestCase):
                 ]
             }))
 
+    def test_each_with_first(self):
+        source  = u"{{#each goodbyes}}{{#if @first}}{{text}}! {{/if}}{{/each}}cruel {{world}}!"
+        context = {
+            'goodbyes': [
+                {'text': "goodbye"},
+                {'text': "Goodbye"},
+                {'text': "GOODBYE"}
+            ],
+            'world': "world"
+        }
+        result = render(source, context)
+        self.assertEqual(result, u"goodbye! cruel world!", "The @first variable is not used");
+
+    def test_each_with_nested_first(self):
+        source  = (
+           u"{{#each goodbyes}}"
+                "({{#if @first}}{{text}}! {{/if}}"
+                "{{#each ../goodbyes}}"
+                    "{{#if @first}}{{text}}!{{/if}}"
+                "{{/each}}"
+                "{{#if @first}} {{text}}!{{/if}}) "
+            "{{/each}}"
+            "cruel {{world}}!"
+        )
+        context = {
+            'goodbyes': [
+                {'text': "goodbye"},
+                {'text': "Goodbye"},
+                {'text': "GOODBYE"}
+            ],
+            'world': "world"
+        };
+        result = render(source, context)
+        self.assertEqual(result, "(goodbye! goodbye! goodbye!) (goodbye!) (goodbye!) cruel world!", "The @first variable is used");
+
+    def test_each_with_object_first(self):
+        source  = u"{{#each goodbyes}}{{#if @first}}{{text}} {{^}}({{text}})! {{/if}}{{/each}}cruel {{world}}!"
+        context = {
+            'goodbyes': {
+                'foo': {'text': "goodbye"},
+                'bar': {'text': "Goodbye"}
+            },
+            'world': "world"
+        }
+        result = render(source, context)
+        self.assertIn(result, (u"goodbye (Goodbye)! cruel world!",
+                               u"Goodbye (goodbye)! cruel world!"), "The @first variable is not used");
+
+    def test_each_with_last(self):
+        source  = u"{{#each goodbyes}}{{#if @last}}{{text}}! {{/if}}{{/each}}cruel {{world}}!"
+        context = {
+            'goodbyes': [
+                {'text': "goodbye"},
+                {'text': "Goodbye"},
+                {'text': "GOODBYE"}
+            ],
+            'world': "world"
+        }
+        result = render(source, context)
+        self.assertEqual(result, u"GOODBYE! cruel world!", "The @first variable is not used");
+
+    def test_each_with_nested_last(self):
+        source  = (
+           u"{{#each goodbyes}}"
+                "({{#if @last}}{{text}}! {{/if}}"
+                "{{#each ../goodbyes}}"
+                    "{{#if @last}}{{text}}!{{/if}}"
+                "{{/each}}"
+                "{{#if @last}} {{text}}!{{/if}}) "
+            "{{/each}}"
+            "cruel {{world}}!"
+        )
+        context = {
+            'goodbyes': [
+                {'text': "goodbye"},
+                {'text': "Goodbye"},
+                {'text': "GOODBYE"}
+            ],
+            'world': "world"
+        };
+        result = render(source, context)
+        self.assertEqual(result, "(GOODBYE!) (GOODBYE!) (GOODBYE! GOODBYE! GOODBYE!) cruel world!", "The @first variable is used");
+
     def test_log(self):
         source = u"{{log blah}}"
         context = {'blah': "whee"}
