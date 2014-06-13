@@ -205,6 +205,9 @@ class Scope:
             return default
     __getitem__ = get
 
+    def __bool__(self):
+        return bool(self.context)
+
     def __len__(self):
         return len(self.context)
 

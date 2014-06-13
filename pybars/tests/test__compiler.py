@@ -24,6 +24,7 @@ except NameError:
 from unittest import TestCase
 
 from pybars import Compiler
+from pybars._compiler import Scope
 
 
 def render(source, context, helpers=None, partials=None, knownHelpers=None,
@@ -93,3 +94,10 @@ class TestCompiler(TestCase):
         self.assertEqual(u"""hello""",
             render(u"""{{foo.[bar baz]}}""",
                 {'foo': {'bar baz': 'hello' }}))
+
+
+class TestScope(TestCase):
+    def test_scope_to_bool(self):
+        # None scope is false
+        scope = Scope(None, None, {})
+        self.assertEqual(bool(scope), False)
