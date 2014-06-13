@@ -208,6 +208,9 @@ class Scope:
     def __bool__(self):
         return bool(self.context)
 
+    def __nonzero__(self):
+        return bool(self.context)
+
     def __len__(self):
         return len(self.context)
 
