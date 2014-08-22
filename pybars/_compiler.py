@@ -188,11 +188,22 @@ def escape(something, _escape_re=_escape_re, substitute=substitute):
     return _escape_re.sub(substitute, something)
 
 
+def pick(context, name, default=None):
+    if isinstance(name, str) and hasattr(context, name):
+        return getattr(context, name)
+    if hasattr(context, 'get'):
+        return context.get(name)
+    try:
+        return context[name]
+    except (KeyError, TypeError):
+        return default
+
+
 sentinel = object()
 
 class Scope:
 
-    def __init__(self, context, parent, data):
+    def __init__(self, context, parent, **data):
         # We should never get a scope object for context, but just in case...
         self.context = context.context if isinstance(context, Scope) else context
         self.parent = parent
@@ -206,10 +217,11 @@ class Scope:
         if name == 'this':
             return self.context
 
-        try:
-            return self.context[name]
-        except (KeyError, TypeError):
-            return default
+        return pick(self.context, name, default)
+        # try:
+        #     return self.context[name]
+        # except (KeyError, TypeError):
+        #     return default
     __getitem__ = get
 
     def __bool__(self):
@@ -244,11 +256,15 @@ def resolve(context, *segments):
         if type(context) in (list, tuple):
             offset = int(segment)
             context = context[offset]
+        elif isinstance(context, Scope):
+            context = context.get(segment)
         else:
-            try:
-                context = context.get(segment)
-            except AttributeError:
-                return None
+            context = pick(context, segment)
+        # else:
+        #     try:
+        #         context = context.get(segment)
+        #     except AttributeError:
+        #         return None
     return context
 
 
@@ -277,8 +293,10 @@ def _each(this, options, context):
     result = strlist()
     if is_dictlike(context):
         count = 0
+        size = len(context)
         for key, local_context in context.items():
-            result.grow(options['fn'](local_context, key=key, first=count==0))
+            result.grow(options['fn'](local_context,
+                key=key, first=count==0, last=count==(size - 1)))
             count += 1
     elif is_iterable(context):
         size = len(context)
@@ -378,9 +396,9 @@ class CodeBuilder:
         # object because the paraent and data attributes may differ for this
         # context.
         self._result.grow(u"    if isinstance(this, Scope):\n")
-        self._result.grow(u"        this = Scope(this.context, parent, data)\n")
+        self._result.grow(u"        this = Scope(this.context, parent, **data)\n")
         self._result.grow(u"    else:\n")
-        self._result.grow(u"        this = Scope(this, parent, data)\n")
+        self._result.grow(u"        this = Scope(this, parent, **data)\n")
 
         # Create a decorator function for nested calls to render. These may be
         # partials or block helpers. They differ from calls to the normal
@@ -496,13 +514,13 @@ class CodeBuilder:
             self._result.grow(u"    value = %s\n" % path)
         self._result.grow([
             u"    if callable(value):\n"
-            u"        child_scope = Scope(this.context, this, data)\n"
+            u"        child_scope = Scope(this.context, this, **data)\n"
             u"        value = value(child_scope, %s\n" % call,
             ])
         if realname:
             self._result.grow(
                 u"    elif value is None:\n"
-                u"        child_scope = Scope(this.context, this, data)\n"
+                u"        child_scope = Scope(this.context, this, **data)\n"
                 u"        value = helpers.get('helperMissing')(child_scope, '%s', %s\n"
                     % (realname, call)
                 )
@@ -546,7 +564,7 @@ class CodeBuilder:
         self._result.grow([
             u"    result.grow(",
             fn_name,
-            u"(Scope(", context_name, u", ", scope_name, u", data)",
+            u"(Scope(", context_name, u", ", scope_name, u", **data)",
             u", helpers=helpers, partials=partials, parent=", scope_name, ", data=data))\n"
             ])
 

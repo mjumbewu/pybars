@@ -99,5 +99,5 @@ class TestCompiler(TestCase):
 class TestScope(TestCase):
     def test_scope_to_bool(self):
         # None scope is false
-        scope = Scope(None, None, {})
+        scope = Scope(None, None, **{})
         self.assertEqual(bool(scope), False)

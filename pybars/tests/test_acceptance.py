@@ -595,10 +595,40 @@ class TestAcceptance(TestCase):
         self.assertEqual(u"cruel world!",
             render(source, {'goodbye': lambda this: None, 'world': "world"}))
 
+    def test_resolve_with_attrs(self):
+        class TestAttr():
+            @property
+            def text(self):
+                return 'Hello'
+
+        class TestGet():
+            def get(self, name):
+                return {'text': 'Hi'}.get(name)
+
+        source = u"{{#each .}}{{test.text}}! {{/each}}"
+        context = [
+            {'test': TestAttr()},
+            {'test': TestGet()},
+            {'test': {'text': 'Goodbye'}}
+        ]
+        self.assertEqual("Hello! Hi! Goodbye! ",
+            render(source, context))
+
     def test_list_context(self):
         source = u"{{#each .}}{{#each .}}{{text}}! {{/each}}cruel world!{{/each}}"
         context = [[{'text': "goodbye"}, {'text': "Goodbye"}, {'text': "GOODBYE"}]]
         self.assertEqual("goodbye! Goodbye! GOODBYE! cruel world!",
+            render(source, context))
+
+    def test_context_with_attrs(self):
+        class TestContext():
+            @property
+            def text(self):
+                return 'Goodbye'
+
+        source = u"{{#each .}}{{text}}! {{/each}}cruel world!"
+        context = [TestContext()]
+        self.assertEqual("Goodbye! cruel world!",
             render(source, context))
 
     def test_each(self):
