@@ -97,10 +97,11 @@ escapedquote ::= '\\' '"' => '\\"'
     | "\\" "'" => "\\'"
 safesymbol ::=  ~<alt_inner> '['? (<letter>|'_'):start (<letterOrDigit>|'_')+:symbol ']'? => start + u''.join(symbol)
 symbol ::=  ~<alt_inner> '['? (<letterOrDigit>|'-'|'@')+:symbol ']'? => u''.join(symbol)
-pathseg ::= '[' <notclosebracket>+:symbol ']' => u''.join(symbol)
+pathseg ::= ('@' '.' '.' '/') => u'@@_parent'
+    | '[' <notclosebracket>+:symbol ']' => u''.join(symbol)
     | <symbol>
     | '/' => u''
-    | ('.' '.' '/') => u'__parent'
+    | ('.' '.' '/') => u'@_parent'
     | '.' => u''
 pathfinish :expected ::= <start> '/' <path>:found ?(found == expected) <finish>
 symbolfinish :expected ::= <start> '/' <symbol>:found ?(found == expected) <finish>
@@ -203,20 +204,26 @@ sentinel = object()
 
 class Scope:
 
-    def __init__(self, context, parent, **data):
-        # We should never get a scope object for context, but just in case...
+    def __init__(self, context, parent, root, data=None, overrides=None):
         self.context = context.context if isinstance(context, Scope) else context
         self.parent = parent
+        self.root = root
         self.data = data or {}
+        # Must be dict of keys and values
+        self.overrides = overrides
 
     def get(self, name, default=None):
-        if name == '__parent':
+        if name == '@root':
+            return self.root
+        if name == '@_parent':
             return self.parent
         if str_class(name).startswith('@'):
             return self.data.get(name[1:], default)
         if name == 'this':
             return self.context
 
+        if self.overrides and name in self.overrides:
+            return self.overrides[name]
         return pick(self.context, name, default)
         # try:
         #     return self.context[name]
@@ -246,7 +253,18 @@ class Scope:
 
 
 def resolve(context, *segments):
+    carryover_data = False
+
     for segment in segments:
+
+        # Handle @../index syntax by popping the extra @ along the segment path
+        if carryover_data:
+            carryover_data = False
+            segment = u'@%s' % segment
+        if len(segment) > 1 and segment[0:2] == '@@':
+            segment = segment[1:]
+            carryover_data = True
+
         if context is None:
             return None
         if isinstance(context, Scope) and context.context is None:
@@ -268,43 +286,40 @@ def resolve(context, *segments):
     return context
 
 
-def is_iterable(obj):
-    try:
-        iter(obj)
-    except TypeError:
-        return False
-    else:
-        return True
-
-def is_dictlike(obj):
-    # Check for the presence of items
-    if not hasattr(obj, 'items'):
-        return False
-
-    # Check whether items is iterable
-    # NOTE: In Python 2, this generates a list that never gets used;
-    #       wasteful. Address later, maybe with six.
-    return is_iterable(obj.items())
-
 def _each(this, options, context):
-    if not context:
+    result = strlist()
+
+    # All sequences in python have a length
+    try:
+        last_index = len(context) - 1
+
+        # If there are no items, we want to trigger the else clause
+        if last_index < 0:
+            raise IndexError()
+
+    except (TypeError, IndexError) as e:
         return options['inverse'](this)
 
-    result = strlist()
-    if is_dictlike(context):
-        count = 0
-        size = len(context)
-        for key, local_context in context.items():
-            result.grow(options['fn'](local_context,
-                key=key, first=count==0, last=count==(size - 1)))
-            count += 1
-    elif is_iterable(context):
-        size = len(context)
-        for index, local_context in enumerate(context):
-            result.grow(options['fn'](local_context,
-                index=index, first=index==0, last=index==(size - 1)))
-    else:
-        return options['inverse'](this)
+    # We use the presence of a keys method to determine if the
+    # key attribute should be passed to the block handler
+    has_keys = hasattr(context, 'keys')
+
+    index = 0
+    for value in context:
+        data = {
+            'index': index,
+            'first': index == 0,
+            'last': index == last_index
+        }
+
+        if has_keys:
+            data['key'] = value
+            value = context[value]
+
+        result.grow(options['fn'](value, data=data))
+
+        index += 1
+
     return result
 
 
@@ -374,13 +389,13 @@ class CodeBuilder:
     def start(self):
         self.stack.append((strlist(), {}))
         self._result, self._locals = self.stack[-1]
-        # Context may be a user hash or a Scope (which injects '__parent' to
+        # Context may be a user hash or a Scope (which injects '@_parent' to
         # implement .. lookups). The JS implementation uses a vector of scopes
         # and then interprets a linear walk-up, which is why there is a
         # disabled test showing arbitrary complex path manipulation: the scope
         # approach used here will probably DTRT but may be slower: reevaluate
         # when profiling.
-        self._result.grow(u"def render(this, helpers=None, partials=None, parent=None, data=None):\n")
+        self._result.grow(u"def render(this, helpers=None, partials=None, parent=None, root=None, data=None):\n")
 
         # Initialize the end result
         self._result.grow(u"    result = strlist()\n")
@@ -390,15 +405,16 @@ class CodeBuilder:
         self._result.grow(u"    if helpers is not None: _helpers.update(helpers)\n")
         self._result.grow(u"    helpers = _helpers\n")
         self._result.grow(u"    if partials is None: partials = {}\n")
+        self._result.grow(u"    if root is None: root = this\n")
         self._result.grow(u"    if data is None: data = {}\n")
 
         # Even if the `this` is already a Scope object, create a new Scope
         # object because the paraent and data attributes may differ for this
         # context.
         self._result.grow(u"    if isinstance(this, Scope):\n")
-        self._result.grow(u"        this = Scope(this.context, parent, **data)\n")
+        self._result.grow(u"        this = Scope(this.context, parent, root, data)\n")
         self._result.grow(u"    else:\n")
-        self._result.grow(u"        this = Scope(this, parent, **data)\n")
+        self._result.grow(u"        this = Scope(this, parent, root, data)\n")
 
         # Create a decorator function for nested calls to render. These may be
         # partials or block helpers. They differ from calls to the normal
@@ -406,10 +422,10 @@ class CodeBuilder:
         # kwargs, and (2) the helpers, partials, and parent scope are all set
         # implicitly.
         self._result.grow(u"    def process_nested_render(nested_render):\n")
-        self._result.grow(u"        def fn(inner_context, **kwargs):\n")
+        self._result.grow(u"        def fn(inner_context, **inner_options):\n")
         self._result.grow(u"            nested_data = data.copy()\n")
-        self._result.grow(u"            nested_data.update(kwargs)\n")
-        self._result.grow(u"            return nested_render(inner_context, helpers=helpers, partials=partials, parent=this, data=nested_data)\n")
+        self._result.grow(u"            nested_data.update(inner_options.get('data', {}))\n")
+        self._result.grow(u"            return nested_render(inner_context, helpers=helpers, partials=partials, parent=this, root=root, data=nested_data)\n")
         self._result.grow(u"        return fn\n")
 
         # Expose used functions and helpers to the template.
@@ -452,6 +468,7 @@ class CodeBuilder:
             u"    options = {'fn': %s}\n" % self._wrap_nested(name),
             u"    options['helpers'] = helpers\n"
             u"    options['partials'] = partials\n"
+            u"    options['root'] = root\n"
             ])
         if alt_nested:
             self._result.grow([
@@ -514,14 +531,18 @@ class CodeBuilder:
             self._result.grow(u"    value = %s\n" % path)
         self._result.grow([
             u"    if callable(value):\n"
-            u"        child_scope = Scope(this.context, this, **data)\n"
+            u"        child_scope = Scope(this.context, this, root, data)\n"
             u"        value = value(child_scope, %s\n" % call,
+            # TODO: Why wouldn't we just use `this` here instead of creating a
+            #       new Scope object?
             ])
         if realname:
             self._result.grow(
                 u"    elif value is None:\n"
-                u"        child_scope = Scope(this.context, this, **data)\n"
+                u"        child_scope = Scope(this.context, this, root, data)\n"
                 u"        value = helpers.get('helperMissing')(child_scope, '%s', %s\n"
+            # TODO: Why wouldn't we just use `this` here instead of creating a
+            #       new Scope object (same as above)?
                     % (realname, call)
                 )
         self._result.grow(u"    if value is None: value = ''\n")
@@ -564,19 +585,42 @@ class CodeBuilder:
         self._result.grow([
             u"    result.grow(",
             fn_name,
-            u"(Scope(", context_name, u", ", scope_name, u", **data)",
-            u", helpers=helpers, partials=partials, parent=", scope_name, ", data=data))\n"
+            u"(Scope(", context_name, u", ", scope_name, u", root, data)",
+            u", helpers=helpers, partials=partials, parent=", scope_name, ", root=root, data=data))\n"
             ])
 
     def add_partial(self, symbol, arguments):
+        arg = ""
+
+        overrides = None
+        positional_args = 0
         if arguments:
-            assert len(arguments) == 1, arguments
-            arg = arguments[0]
-        else:
-            arg = ""
-        self._result.append(
-            u"    inner = partials['%s']\n" % symbol)
-        self._invoke_template("inner", self._lookup_arg(arg), "this")
+            for argument in arguments:
+                kwmatch = re.match('(\w+)=(.+)$', argument)
+                if kwmatch:
+                    if not overrides:
+                        overrides = {}
+                    overrides[kwmatch.group(1)] = kwmatch.group(2)
+                else:
+                    assert positional_args == 0, positional_args
+                    positional_args += 1
+                    arg = argument
+
+        overrides_literal = 'None'
+        if overrides:
+            overrides_literal = u'{'
+            for key in overrides:
+                overrides_literal += u'"%s": %s, ' % (key, overrides[key])
+            overrides_literal += u'}'
+        self._result.grow([u"    overrides = %s\n" % overrides_literal])
+
+        self._result.grow([
+            u"    inner = partials['%s']\n" % symbol,
+            u"    partial_context = ", self._lookup_arg(arg), "\n"
+            u"    if overrides:\n"
+            u"        partial_context = partial_context.copy()\n"
+            u"        partial_context.update(overrides)\n"])
+        self._invoke_template("inner", "partial_context", "this")
 
 
 class Compiler:

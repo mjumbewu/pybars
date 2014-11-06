@@ -213,6 +213,14 @@ class TestAcceptance(TestCase):
             "goodbye cruel Alan! Goodbye cruel Alan! GOODBYE cruel Alan! ",
             render(source, context))
 
+    def test_parent_lookup(self):
+        source = u"{{#goodbyes}}{{text}} cruel {{@_parent.name}}! {{/goodbyes}}"
+        context = {'name': "Alan", 'goodbyes': [
+            {'text': "goodbye"}, {'text': "Goodbye"}, {'text': "GOODBYE"}]}
+        self.assertEqual(
+            "goodbye cruel Alan! Goodbye cruel Alan! GOODBYE cruel Alan! ",
+            render(source, context))
+
     def test_helper_with_complex_lookup(self):
         template = u"{{#goodbyes}}{{{link ../prefix}}}{{/goodbyes}}"
         context = {
@@ -256,6 +264,12 @@ class TestAcceptance(TestCase):
             u"{{#inner}}cruel {{../../omg}}{{/inner}}{{/outer}}"
         context = {'omg': "OMG!", 'outer': [{'inner': [{'text': "goodbye"}]}]}
         self.assertEqual(u"Goodbye cruel OMG!", render(template, context))
+
+    def test_root_lookup(self):
+        template = u"{{#outer}}Goodbye "\
+            u"{{#inner}}cruel {{@root.top}}{{/inner}}{{/outer}}"
+        context = {'top': "world", 'outer': [{'inner': [{'text': "goodbye"}]}]}
+        self.assertEqual(u"Goodbye cruel world", render(template, context))
 
     def test_block_helper(self):
         template = u"{{#goodbyes}}{{text}}! {{/goodbyes}}cruel {{world}}!"
@@ -412,6 +426,28 @@ class TestAcceptance(TestCase):
         self.assertEqual("Dudes: Yehuda (http://yehuda) Alan (http://alan) ",
             render(source, context, partials={'dude': partial}))
 
+    def test_partials_too_many_args(self):
+        source = u'Dudes: {{>dude dudes "extra"}}'
+        partial = u"{{#this}}{{name}} ({{url}}) {{/this}}"
+        context = {
+            'dudes': [
+                {'name': "Yehuda", 'url': "http://yehuda"},
+                {'name': "Alan", 'url': "http://alan"}
+                ]}
+        self.assertRaises(Exception, render, source, context,
+            partials={'dude': partial})
+
+    def test_partials_kwargs(self):
+        source = u'Dudes: {{#dudes}}{{>dude url="http://example"}}{{/dudes}}'
+        partial = u"{{name}} ({{url}}) "
+        context = {
+            'dudes': [
+                {'name': "Yehuda", 'url': "http://yehuda"},
+                {'name': "Alan", 'url': "http://alan"}
+                ]}
+        self.assertEqual("Dudes: Yehuda (http://example) Alan (http://example) ",
+            render(source, context, partials={'dude': partial}))
+
     def test_partial_in_a_partial(self):
         source = u"Dudes: {{#dudes}}{{>dude}}{{/dudes}}"
         dude_src = u"{{name}} {{> url}} "
@@ -429,6 +465,22 @@ class TestAcceptance(TestCase):
 
     def test_rendering_undefined_partial_throws_an_exception(self):
         self.assertRaises(Exception, render, u"{{> whatever}}", {})
+
+    def test_root_nested_partial(self):
+        source = u"Dudes: {{#dudes}}{{>dude}}{{/dudes}}"
+        dude_src = u"{{name}} {{> url}} "
+        url_src = u"<a href='{{url}}' target='{{@root.target}}'>{{url}}</a>"
+        partials = {'dude': dude_src, 'url': url_src}
+        context = {
+            'target': '_blank',
+            'dudes': [
+                {'name': "Yehuda", 'url': "http://yehuda"},
+                {'name': "Alan", 'url': "http://alan"}
+                ]}
+        self.assertEqual(
+            "Dudes: Yehuda <a href='http://yehuda' target='_blank'>http://yehuda</a>"
+            " Alan <a href='http://alan' target='_blank'>http://alan</a> ",
+            render(source, context, partials=partials))
 
     def test_GH_14_a_partial_preceding_a_selector(self):
         source = u"Dudes: {{>dude}} {{another_dude}}"
@@ -786,6 +838,24 @@ class TestAcceptance(TestCase):
         result = render(source, context)
         self.assertEqual(result, "(GOODBYE!) (GOODBYE!) (GOODBYE! GOODBYE! GOODBYE!) cruel world!", "The @first variable is used");
 
+    def test_each_with_parent_index(self):
+        source = u"{{#each people}}{{#each foods}}{{../name}}({{@../index}}) likes {{name}}({{@index}}), {{/each}}{{/each}}"
+        context = {
+            'people': [
+                {
+                    'name': 'John',
+                    'foods': [{'name': 'apples'}, {'name': 'pears'}]
+                },
+                {
+                    'name': 'Jane',
+                    'foods': [{'name': 'grapes'}, {'name': 'pineapple'}]
+                }
+            ],
+        }
+        self.assertEqual(
+            "John(0) likes apples(0), John(0) likes pears(1), Jane(1) likes grapes(0), Jane(1) likes pineapple(1), ",
+            render(source, context))
+
     def test_log(self):
         source = u"{{log blah}}"
         context = {'blah': "whee"}
@@ -997,7 +1067,7 @@ class TestDataHash (TestCase):
         template = Compiler().compile(u'{{#let world="world"}}{{#if foo}}{{#if foo}}Hello {{@world}}{{/if}}{{/if}}{{/let}}');
 
         def _let(this, options, **kwargs):
-            return options['fn'](this, **kwargs)
+            return options['fn'](this, data=kwargs)
         helpers = {'let': _let}
 
         result = template({ 'foo': True }, helpers=helpers);
@@ -1060,7 +1130,7 @@ class TestDataHash (TestCase):
     def test_data_is_inherited_downstream(self):
         template = Compiler().compile(u"{{#let foo=1 bar=2}}{{#let foo=bar.baz}}{{@bar}}{{@foo}}{{/let}}{{@foo}}{{/let}}");
         def _let(this, options, **kwargs):
-            return options['fn'](this, **kwargs)
+            return options['fn'](this, data=kwargs)
         helpers = {'let': _let}
 
         result = template({ 'bar': { 'baz': "hello world" } }, helpers=helpers, data={})
@@ -1130,7 +1200,7 @@ class TestDataHash (TestCase):
         template = Compiler().compile(u"{{#hello}}{{world zomg}}{{/hello}}")
 
         def _hello(this, options):
-            return options['fn']({'exclaim': '?', 'zomg': 'world'}, adjective='sad')
+            return options['fn']({'exclaim': '?', 'zomg': 'world'}, data=dict(adjective='sad'))
         def _world(this, thing):
             return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
         helpers = {'hello': _hello, 'world':  _world}
@@ -1142,7 +1212,7 @@ class TestDataHash (TestCase):
         template = Compiler().compile(u"{{#hello}}{{world ../zomg}}{{/hello}}");
 
         def _hello(this, options):
-            return options['fn']({'exclaim': '?', 'zomg': 'world'}, adjective='sad')
+            return options['fn']({'exclaim': '?', 'zomg': 'world'}, data=dict(adjective='sad'))
         def _world(this, thing):
             return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
         helpers = {'hello': _hello, 'world':  _world}
