@@ -575,19 +575,19 @@ class CodeBuilder:
         name = self.allocate_value(nested)
         self._result.grow([
             u"    value = this.get('%s')\n" % symbol,
-            u"    if not value:\n"
-            u"    "])
-        self._invoke_template(name, "this.context", "this")
+            u"    if not value:\n"])
+        self._invoke_template(name, "this.context", "this", indent=u"    ")
 
-    def _invoke_template(self, fn_name, context_name, scope_name):
+    def _invoke_template(self, fn_name, context_name, scope_name, indent=u""):
         """
+        Compile a sub-template (or inverted section) into the template.
         """
         self._result.grow([
-            u"    result.grow(",
-            fn_name,
-            u"(Scope(", context_name, u", ", scope_name, u", root, data)",
-            u", helpers=helpers, partials=partials, parent=", scope_name, ", root=root, data=data))\n"
-            ])
+            indent, u"    tpl_scope = Scope(", context_name, u", ", scope_name, u", root, data)\n",
+            indent, u"    tpl_func = ", fn_name, "\n",
+            indent, u"    tpl_result = tpl_func(tpl_scope, helpers=helpers, partials=partials, parent=", scope_name, ", root=root, data=data)\n",
+            indent, u"    result.grow(tpl_result)\n"
+        ])
 
     def add_partial(self, symbol, arguments):
         arg = ""
