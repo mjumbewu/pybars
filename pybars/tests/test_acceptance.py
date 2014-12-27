@@ -79,6 +79,14 @@ class TestAcceptance(TestCase):
         self.assertEqual("num: 0",
             render(u"num: {{num1/num2}}", {'num1': {'num2': 0}}))
 
+    def test_negative_int_literal(self):
+        self.assertEqual("str int int",
+            render(u"{{type \"string\"}} {{type 1}} {{type -1}}", None,
+            helpers={'type': lambda s, v: type(v).__name__}))
+        self.assertEqual("string 1 -1",
+            render(u"{{echo \"string\"}} {{echo 1}} {{echo -1}}", None,
+            helpers={'echo': lambda s, v: str(v)}))
+
     def test_newlines(self):
         self.assertThat(u"Alan's\nTest", RendersItself())
         self.assertThat(u"Alan's\rTest", RendersItself())
@@ -218,6 +226,14 @@ class TestAcceptance(TestCase):
             "goodbye cruel Alan! Goodbye cruel Alan! GOODBYE cruel Alan! ",
             render(source, context))
 
+    def test_parent_lookup(self):
+        source = u"{{#goodbyes}}{{text}} cruel {{@_parent.name}}! {{/goodbyes}}"
+        context = {'name': "Alan", 'goodbyes': [
+            {'text': "goodbye"}, {'text': "Goodbye"}, {'text': "GOODBYE"}]}
+        self.assertEqual(
+            "goodbye cruel Alan! Goodbye cruel Alan! GOODBYE cruel Alan! ",
+            render(source, context))
+
     def test_helper_with_complex_lookup(self):
         template = u"{{#goodbyes}}{{{link ../prefix}}}{{/goodbyes}}"
         context = {
@@ -261,6 +277,12 @@ class TestAcceptance(TestCase):
             u"{{#inner}}cruel {{../../omg}}{{/inner}}{{/outer}}"
         context = {'omg': "OMG!", 'outer': [{'inner': [{'text': "goodbye"}]}]}
         self.assertEqual(u"Goodbye cruel OMG!", render(template, context))
+
+    def test_root_lookup(self):
+        template = u"{{#outer}}Goodbye "\
+            u"{{#inner}}cruel {{@root.top}}{{/inner}}{{/outer}}"
+        context = {'top': "world", 'outer': [{'inner': [{'text': "goodbye"}]}]}
+        self.assertEqual(u"Goodbye cruel world", render(template, context))
 
     def test_block_helper(self):
         template = u"{{#goodbyes}}{{text}}! {{/goodbyes}}cruel {{world}}!"
@@ -417,6 +439,28 @@ class TestAcceptance(TestCase):
         self.assertEqual("Dudes: Yehuda (http://yehuda) Alan (http://alan) ",
             render(source, context, partials={'dude': partial}))
 
+    def test_partials_too_many_args(self):
+        source = u'Dudes: {{>dude dudes "extra"}}'
+        partial = u"{{#this}}{{name}} ({{url}}) {{/this}}"
+        context = {
+            'dudes': [
+                {'name': "Yehuda", 'url': "http://yehuda"},
+                {'name': "Alan", 'url': "http://alan"}
+                ]}
+        self.assertRaises(Exception, render, source, context,
+            partials={'dude': partial})
+
+    def test_partials_kwargs(self):
+        source = u'Dudes: {{#dudes}}{{>dude url="http://example"}}{{/dudes}}'
+        partial = u"{{name}} ({{url}}) "
+        context = {
+            'dudes': [
+                {'name': "Yehuda", 'url': "http://yehuda"},
+                {'name': "Alan", 'url': "http://alan"}
+                ]}
+        self.assertEqual("Dudes: Yehuda (http://example) Alan (http://example) ",
+            render(source, context, partials={'dude': partial}))
+
     def test_partial_in_a_partial(self):
         source = u"Dudes: {{#dudes}}{{>dude}}{{/dudes}}"
         dude_src = u"{{name}} {{> url}} "
@@ -434,6 +478,22 @@ class TestAcceptance(TestCase):
 
     def test_rendering_undefined_partial_throws_an_exception(self):
         self.assertRaises(Exception, render, u"{{> whatever}}", {})
+
+    def test_root_nested_partial(self):
+        source = u"Dudes: {{#dudes}}{{>dude}}{{/dudes}}"
+        dude_src = u"{{name}} {{> url}} "
+        url_src = u"<a href='{{url}}' target='{{@root.target}}'>{{url}}</a>"
+        partials = {'dude': dude_src, 'url': url_src}
+        context = {
+            'target': '_blank',
+            'dudes': [
+                {'name': "Yehuda", 'url': "http://yehuda"},
+                {'name': "Alan", 'url': "http://alan"}
+                ]}
+        self.assertEqual(
+            "Dudes: Yehuda <a href='http://yehuda' target='_blank'>http://yehuda</a>"
+            " Alan <a href='http://alan' target='_blank'>http://alan</a> ",
+            render(source, context, partials=partials))
 
     def test_GH_14_a_partial_preceding_a_selector(self):
         source = u"Dudes: {{>dude}} {{another_dude}}"
@@ -600,6 +660,42 @@ class TestAcceptance(TestCase):
         self.assertEqual(u"cruel world!",
             render(source, {'goodbye': lambda this: None, 'world': "world"}))
 
+    def test_resolve_with_attrs(self):
+        class TestAttr():
+            @property
+            def text(self):
+                return 'Hello'
+
+        class TestGet():
+            def get(self, name):
+                return {'text': 'Hi'}.get(name)
+
+        source = u"{{#each .}}{{test.text}}! {{/each}}"
+        context = [
+            {'test': TestAttr()},
+            {'test': TestGet()},
+            {'test': {'text': 'Goodbye'}}
+        ]
+        self.assertEqual("Hello! Hi! Goodbye! ",
+            render(source, context))
+
+    def test_list_context(self):
+        source = u"{{#each .}}{{#each .}}{{text}}! {{/each}}cruel world!{{/each}}"
+        context = [[{'text': "goodbye"}, {'text': "Goodbye"}, {'text': "GOODBYE"}]]
+        self.assertEqual("goodbye! Goodbye! GOODBYE! cruel world!",
+            render(source, context))
+
+    def test_context_with_attrs(self):
+        class TestContext():
+            @property
+            def text(self):
+                return 'Goodbye'
+
+        source = u"{{#each .}}{{text}}! {{/each}}cruel world!"
+        context = [TestContext()]
+        self.assertEqual("Goodbye! cruel world!",
+            render(source, context))
+
     def test_each(self):
         source = u"{{#each goodbyes}}{{text}}! {{/each}}cruel {{world}}!"
         context = {'goodbyes':
@@ -609,6 +705,83 @@ class TestAcceptance(TestCase):
             render(source, context))
         self.assertEqual("cruel world!",
             render(source, {'goodbyes': [], 'world': "world"}))
+
+    def test_each_this(self):
+        source = u"{{#each name}}{{capitalize this}} {{/each}}"
+        helpers = {'capitalize': lambda this, value: value.upper()}
+        context = {
+            'name': ['John', 'James']
+        }
+        self.assertEqual("JOHN JAMES ",
+            render(source, context, helpers=helpers))
+
+    def test_each_of_None(self):
+        self.assertEqual(u"Goodbye cruel world!",
+            render(u"Goodbye {{^each things}}cruel{{/each}} world!",
+                {'things': None}))
+
+    def test_each_of_empty_list(self):
+        self.assertEqual(u"Goodbye cruel world!",
+            render(u"Goodbye {{#each things}}happy {{^}}cruel {{/each}}world!",
+                {'things': []}))
+
+    def test_each_of_truthy_non_iterable_object(self):
+        self.assertEqual(u"Goodbye cruel world!",
+            render(u"Goodbye {{#each things}}happy {{^}}cruel {{/each}}world!",
+                {'things': True}))
+
+    def test_each_with_object_and_key(self):
+        source = u"{{#each goodbyes}}{{@key}}. {{text}}! {{/each}}cruel {{world}}!"
+        context = {
+            'goodbyes': {
+                "<b>#1</b>": {'text': "goodbye"},
+                2: {'text': "GOODBYE"}
+            }, 'world': "world"};
+        self.assertIn(
+            render(source, context),
+
+            # Depending on iteration order, one will come before the other.
+            (
+                "&lt;b&gt;#1&lt;/b&gt;. goodbye! 2. GOODBYE! cruel world!",
+                "2. GOODBYE! &lt;b&gt;#1&lt;/b&gt;. goodbye! cruel world!"
+            )
+        )
+
+    def test_each_with_index(self):
+        source = u"{{#each goodbyes}}{{@index}}. {{text}}! {{/each}}cruel {{world}}!"
+        context = {
+            'goodbyes': [{'text': "goodbye"}, {'text': "Goodbye"}, {'text': "GOODBYE"}],
+            'world': "world"}
+        self.assertEqual(
+            "0. goodbye! 1. Goodbye! 2. GOODBYE! cruel world!",
+            render(source, context))
+
+    def test_each_with_nested_index(self):
+        source = u"{{#each goodbyes}}{{@index}}. {{text}}! {{#each ../goodbyes}}{{@index}} {{/each}}After {{@index}} {{/each}}{{@index}}cruel {{world}}!"
+        context = {
+            'goodbyes': [{'text': "goodbye"}, {'text': "Goodbye"}, {'text': "GOODBYE"}],
+            'world': "world"}
+        self.assertEqual(
+            "0. goodbye! 0 1 2 After 0 1. Goodbye! 0 1 2 After 1 2. GOODBYE! 0 1 2 After 2 cruel world!",
+            render(source, context))
+
+    def test_each_with_parent_index(self):
+        source = u"{{#each people}}{{#each foods}}{{../name}}({{@../index}}) likes {{name}}({{@index}}), {{/each}}{{/each}}"
+        context = {
+            'people': [
+                {
+                    'name': 'John',
+                    'foods': [{'name': 'apples'}, {'name': 'pears'}]
+                },
+                {
+                    'name': 'Jane',
+                    'foods': [{'name': 'grapes'}, {'name': 'pineapple'}]
+                }
+            ],
+        }
+        self.assertEqual(
+            "John(0) likes apples(0), John(0) likes pears(1), Jane(1) likes grapes(0), Jane(1) likes pineapple(1), ",
+            render(source, context))
 
     def test_log(self):
         source = u"{{log blah}}"

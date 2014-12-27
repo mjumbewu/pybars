@@ -77,7 +77,7 @@ path ::= ~('/') <pathseg>+:segments => ('path', segments)
 kwliteral ::= <safesymbol>:s '=' (<literal>|<path>):v => ('kwparam', s, v)
 literal ::= (<string>|<integer>|<boolean>):thing => ('literalparam', thing)
 string ::= '"' <notquote>*:ls '"' => u'"' + u''.join(ls) + u'"'
-integer ::= <digit>+:ds => int(''.join(ds))
+integer ::= '-'?:sign <digit>+:ds => int((sign if sign else '') + ''.join(ds))
 boolean ::= <false>|<true>
 false ::= 'f' 'a' 'l' 's' 'e' => False
 true ::= 't' 'r' 'u' 'e' => True
@@ -87,10 +87,11 @@ escapedquote ::= '\\' '"' => '\\"'
     | '\\' '\\' => '\\\\'
 safesymbol ::=  ~<alt_inner> '['? (<letter>|'_'):start (<letterOrDigit>|'_')+:symbol ']'? => start + u''.join(symbol)
 symbol ::=  ~<alt_inner> '['? (<letterOrDigit>|'-'|'@')+:symbol ']'? => u''.join(symbol)
-pathseg ::= '[' <notclosebracket>+:symbol ']' => u''.join(symbol)
+pathseg ::= ('@' '.' '.' '/') => u'@@_parent'
+    | '[' <notclosebracket>+:symbol ']' => u''.join(symbol)
     | <symbol>
     | '/' => u''
-    | ('.' '.' '/') => u'__parent'
+    | ('.' '.' '/') => u'@_parent'
     | '.' => u''
 pathfinish :expected ::= <start> '/' <path>:found ?(found == expected) <finish>
 symbolfinish :expected ::= <start> '/' <symbol>:found ?(found == expected) <finish>
@@ -178,30 +179,54 @@ def escape(something, _escape_re=_escape_re, substitute=substitute):
     return _escape_re.sub(substitute, something)
 
 
+def pick(context, name, default=None):
+    if isinstance(name, str) and hasattr(context, name):
+        return getattr(context, name)
+    if hasattr(context, 'get'):
+        return context.get(name)
+    try:
+        return context[name]
+    except (KeyError, TypeError):
+        return default
+
+
 sentinel = object()
 
 class Scope:
 
-    def __init__(self, context, parent, index=None, key=None):
+    def __init__(self, context, parent, root, overrides=None, index=None, key=None, first=None, last=None):
         self.context = context
         self.parent = parent
+        self.root = root
+        # Must be dict of keys and values
+        self.overrides = overrides
         self.index = index
         self.key = key
+        self.first = first
+        self.last = last
 
     def get(self, name, default=None):
-        if name == '__parent':
+        if name == '@root':
+            return self.root
+        if name == '@_parent':
             return self.parent
         if name == '@index' and self.index is not None:
             return self.index
         if name == '@key' and self.key is not None:
             return self.key
+        if name == '@first' and self.first is not None:
+            return self.first
+        if name == '@last' and self.last is not None:
+            return self.last
         if name == 'this':
             return self.context
-        result = self.context.get(name, self)
-        if result is not self:
-            return result
-        return default
+        if self.overrides and name in self.overrides:
+            return self.overrides[name]
+        return pick(self.context, name, default)
     __getitem__ = get
+
+    def __len__(self):
+        return len(self.context)
 
     # Added for Python 3
     def __str__(self):
@@ -213,7 +238,22 @@ class Scope:
 
 
 def resolve(context, *segments):
+    carryover_data = False
+
+    # This makes sure that bare "this" paths don't return a Scope object
+    if segments == ('',) and isinstance(context, Scope):
+        return context.get('this')
+
     for segment in segments:
+
+        # Handle @../index syntax by popping the extra @ along the segment path
+        if carryover_data:
+            carryover_data = False
+            segment = u'@%s' % segment
+        if len(segment) > 1 and segment[0:2] == '@@':
+            segment = segment[1:]
+            carryover_data = True
+
         if context is None:
             return None
         if segment in (None, ""):
@@ -221,26 +261,51 @@ def resolve(context, *segments):
         if type(context) in (list, tuple):
             offset = int(segment)
             context = context[offset]
-        else:
+        elif isinstance(context, Scope):
             try:
                 context = context.get(segment)
             except AttributeError:
                 return None
+        else:
+            context = pick(context, segment)
     return context
 
 
 def _each(this, options, context):
     result = strlist()
-    i = 0
-    for local_context in context:
-        kwargs = {}
-        if isinstance(context, list):
-            kwargs['index'] = i
-        if isinstance(context, dict):
-            kwargs['key'] = local_context
-        scope = Scope(local_context, this, **kwargs)
+
+    # All sequences in python have a length
+    try:
+        last_index = len(context) - 1
+
+        # If there are no items, we want to trigger the else clause
+        if last_index < 0:
+            raise IndexError()
+
+    except (TypeError, IndexError) as e:
+        return options['inverse'](this)
+
+    # We use the presence of a keys method to determine if the
+    # key attribute should be passed to the block handler
+    has_keys = hasattr(context, 'keys')
+
+    index = 0
+    for value in context:
+        kwargs = {
+            'index': index,
+            'first': index == 0,
+            'last': index == last_index
+        }
+
+        if has_keys:
+            kwargs['key'] = value
+            value = context[value]
+
+        scope = Scope(value, this, options['root'], **kwargs)
         result.grow(options['fn'](scope))
-        i += 1
+
+        index += 1
+
     return result
 
 
@@ -310,18 +375,19 @@ class CodeBuilder:
     def start(self):
         self.stack.append((strlist(), {}))
         self._result, self._locals = self.stack[-1]
-        # Context may be a user hash or a Scope (which injects '__parent' to
+        # Context may be a user hash or a Scope (which injects '@_parent' to
         # implement .. lookups). The JS implementation uses a vector of scopes
         # and then interprets a linear walk-up, which is why there is a
         # disabled test showing arbitrary complex path manipulation: the scope
         # approach used here will probably DTRT but may be slower: reevaluate
         # when profiling.
-        self._result.grow(u"def render(context, helpers=None, partials=None):\n")
+        self._result.grow(u"def render(context, helpers=None, partials=None, root=None):\n")
         self._result.grow(u"    result = strlist()\n")
         self._result.grow(u"    _helpers = dict(pybars['helpers'])\n")
         self._result.grow(u"    if helpers is not None: _helpers.update(helpers)\n")
         self._result.grow(u"    helpers = _helpers\n")
         self._result.grow(u"    if partials is None: partials = {}\n")
+        self._result.grow(u"    if root is None: root = context\n")
         # Expose used functions and helpers to the template.
         self._locals['strlist'] = strlist
         self._locals['escape'] = escape
@@ -346,7 +412,7 @@ class CodeBuilder:
         return name
 
     def _wrap_nested(self, name):
-        return u"partial(%s, helpers=helpers, partials=partials)" % name
+        return u"partial(%s, helpers=helpers, partials=partials, root=root)" % name
 
     def add_block(self, symbol, arguments, nested, alt_nested):
         name = self.allocate_value(nested)
@@ -357,6 +423,7 @@ class CodeBuilder:
             u"    options = {'fn': %s}\n" % self._wrap_nested(name),
             u"    options['helpers'] = helpers\n"
             u"    options['partials'] = partials\n"
+            u"    options['root'] = root\n"
             ])
         if alt_nested:
             self._result.grow([
@@ -373,7 +440,7 @@ class CodeBuilder:
             u"    if value is None:\n"
             u"        value = context.get('%s')\n" % symbol,
             u"    if helper and callable(helper):\n"
-            u"        this = Scope(context, context)\n"
+            u"        this = Scope(context, context, root)\n"
             u"        value = value(this, options, %s\n" % call,
             u"    else:\n"
             u"        helper = helpers['blockHelperMissing']\n"
@@ -416,13 +483,13 @@ class CodeBuilder:
             self._result.grow(u"    value = %s\n" % path)
         self._result.grow([
             u"    if callable(value):\n"
-            u"        this = Scope(context, context)\n"
+            u"        this = Scope(context, context, root)\n"
             u"        value = value(this, %s\n" % call,
             ])
         if realname:
             self._result.grow(
                 u"    elif value is None:\n"
-                u"        this = Scope(context, context)\n"
+                u"        this = Scope(context, context, root)\n"
                 u"        value = helpers.get('helperMissing')(this, '%s', %s\n"
                     % (realname, call)
                 )
@@ -466,18 +533,37 @@ class CodeBuilder:
             fn_name,
             u"(",
             this_name,
-            u", helpers=helpers, partials=partials))\n"
+            u", helpers=helpers, partials=partials, root=root))\n"
             ])
 
     def add_partial(self, symbol, arguments):
+        arg = ""
+
+        overrides = None
+        positional_args = 0
         if arguments:
-            assert len(arguments) == 1, arguments
-            arg = arguments[0]
-        else:
-            arg = ""
+            for argument in arguments:
+                kwmatch = re.match('(\w+)=(.+)$', argument)
+                if kwmatch:
+                    if not overrides:
+                        overrides = {}
+                    overrides[kwmatch.group(1)] = kwmatch.group(2)
+                else:
+                    assert positional_args == 0, positional_args
+                    positional_args += 1
+                    arg = argument
+
+        overrides_literal = 'None'
+        if overrides:
+            overrides_literal = u'{'
+            for key in overrides:
+                overrides_literal += u'"%s": %s, ' % (key, overrides[key])
+            overrides_literal += u'}'
+        self._result.grow([u"    overrides = %s\n" % overrides_literal])
+
         self._result.grow([
             u"    inner = partials['%s']\n" % symbol,
-            u"    scope = Scope(%s, context)\n" % self._lookup_arg(arg)])
+            u"    scope = Scope(%s, context, root, overrides=overrides)\n" % self._lookup_arg(arg)])
         self._invoke_template("inner", "scope")
 
 
