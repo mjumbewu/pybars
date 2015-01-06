@@ -341,10 +341,10 @@ def _unless(this, options, context):
 
 
 def _lookup(this, context, key):
-    if context is not None:
+    try:
         return context[key]
-    else:
-        return ''
+    except (KeyError, IndexError, TypeError):
+        return
 
 
 def _blockHelperMissing(this, options, context):
