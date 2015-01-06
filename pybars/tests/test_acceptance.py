@@ -1236,3 +1236,30 @@ class TestDataHash (TestCase):
 
         result = template({'exclaim': True, 'zomg': "world"}, helpers=helpers, data={'adjective': "happy"});
         self.assertEqual("sad world?", str_class(result));
+
+    def test_should_lookup_arbitrary_content(self):
+        string  = u'{{#each goodbyes}}{{lookup ../data .}}{{/each}}'
+        context = {'goodbyes': [0, 1], 'data': ['foo', 'bar']}
+
+        template = Compiler().compile(string)
+        result   = template(context)
+
+        self.assertEqual(str_class(result), 'foobar')
+
+    def test_should_not_fail_on_undefined_value(self):
+        string  = u'{{#each goodbyes}}{{lookup ../bar .}}{{/each}}'
+        context = {'goodbyes': [0, 1], 'data': ['foo', 'bar']}
+
+        template = Compiler().compile(string)
+        result = template(context)
+
+        self.assertEqual(str_class(result), '')
+
+    def test_should_lookup_content_by_special_variables(self):
+        string  = u'{{#each goodbyes}}{{lookup ../data @index}}{{/each}}'
+        context = {'goodbyes': [0, 1], 'data': ['foo', 'bar']}
+
+        template = Compiler().compile(string)
+        result   = template(context)
+
+        self.assertEqual(str_class(result), 'foobar')
