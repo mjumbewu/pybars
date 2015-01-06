@@ -78,7 +78,7 @@ kwliteral ::= <safesymbol>:s '=' (<literal>|<path>):v => ('kwparam', s, v)
 literal ::= (<string>|<integer>|<boolean>):thing => ('literalparam', thing)
 string ::= '"' <notdquote>*:ls '"' => u'"' + u''.join(ls) + u'"'
     | "'" <notsquote>*:ls "'" => u"'" + u''.join(ls) + u"'"
-integer ::= <digit>+:ds => int(''.join(ds))
+integer ::= '-'?:sign <digit>+:ds => int((sign if sign else '') + ''.join(ds))
 boolean ::= <false>|<true>
 false ::= 'f' 'a' 'l' 's' 'e' => False
 true ::= 't' 'r' 'u' 'e' => True
@@ -282,11 +282,6 @@ def resolve(context, *segments):
             context = context.get(segment)
         else:
             context = pick(context, segment)
-        # else:
-        #     try:
-        #         context = context.get(segment)
-        #     except AttributeError:
-        #         return None
     return context
 
 
