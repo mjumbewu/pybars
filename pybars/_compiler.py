@@ -238,10 +238,6 @@ class Scope:
         if self.overrides and name in self.overrides:
             return self.overrides[name]
         return pick(self.context, name, default)
-        # try:
-        #     return self.context[name]
-        # except (KeyError, TypeError):
-        #     return default
     __getitem__ = get
 
     def __bool__(self):
