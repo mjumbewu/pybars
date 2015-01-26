@@ -1215,7 +1215,7 @@ class TestDataHash (TestCase):
         template = Compiler().compile(u"{{hello}}");
 
         def _hello(this):
-            return ' '.join([this.data['adjective'], this['noun']])
+            return ' '.join([this.private['adjective'], this['noun']])
 
         result = template({'noun': "cat"}, helpers={'hello': _hello}, data={'adjective': "happy"})
         self.assertEqual("happy cat", str_class(result))
@@ -1306,7 +1306,7 @@ class TestDataHash (TestCase):
         }
 
         def _hello(this):
-            return ' '.join([this.data['adjective'], this['noun']])
+            return ' '.join([this.private['adjective'], this['noun']])
         helpers = {'hello': _hello}
 
         result = template({'noun': "cat"}, helpers=helpers, partials=partials, data={'adjective': "happy"});
@@ -1316,7 +1316,7 @@ class TestDataHash (TestCase):
         template = Compiler().compile(u"{{hello world}}");
 
         def _hello(this, noun):
-            return '%s %s%s' % (this.data['adjective'], noun, '!' if this['exclaim'] else '')
+            return '%s %s%s' % (this.private['adjective'], noun, '!' if this['exclaim'] else '')
         helpers = {'hello': _hello}
 
         result = template({'exclaim': True, 'world': "world"}, helpers=helpers, data={'adjective': "happy"})
@@ -1328,7 +1328,7 @@ class TestDataHash (TestCase):
         def _hello(this, options):
             return options['fn'](this)
         def _world(this):
-            return '%s world%s' % (this.data['adjective'], '!' if this['exclaim'] else '')
+            return '%s world%s' % (this.private['adjective'], '!' if this['exclaim'] else '')
         helpers = {'hello': _hello, 'world': _world}
 
         result = template({'exclaim': True}, helpers=helpers, data={'adjective': "happy"})
@@ -1340,7 +1340,7 @@ class TestDataHash (TestCase):
         def _hello(this, options):
             return options['fn']({'exclaim': "?"})
         def _world(this, thing):
-            return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
+            return '%s %s%s' % (this.private['adjective'], thing, this['exclaim'] or '')
         helpers = {'hello': _hello, 'world': _world}
 
         result = template({'exclaim': True, 'zomg': "world"}, helpers=helpers, data={'adjective': "happy"})
@@ -1350,9 +1350,9 @@ class TestDataHash (TestCase):
         template = Compiler().compile(u"{{#hello}}{{world ../zomg}}{{/hello}}")
 
         def _hello(this, options):
-            return '%s %s' % (this.data['accessData'], options['fn']({'exclaim': '?'}))
+            return '%s %s' % (this.private['accessData'], options['fn']({'exclaim': '?'}))
         def _world(this, thing):
-            return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
+            return '%s %s%s' % (this.private['adjective'], thing, this['exclaim'] or '')
         helpers = {'hello': _hello, 'world': _world}
 
         result = template({'exclaim': True, 'zomg': "world"}, helpers=helpers, data={'adjective': "happy", 'accessData': "#win"})
@@ -1364,7 +1364,7 @@ class TestDataHash (TestCase):
         def _hello(this, options):
             return options['fn']({'exclaim': '?', 'zomg': 'world'}, data=dict(adjective='sad'))
         def _world(this, thing):
-            return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
+            return '%s %s%s' % (this.private['adjective'], thing, this['exclaim'] or '')
         helpers = {'hello': _hello, 'world':  _world}
 
         result = template({'exclaim': True, 'zomg': "planet"}, helpers=helpers, data={'adjective': "happy"});
@@ -1376,7 +1376,7 @@ class TestDataHash (TestCase):
         def _hello(this, options):
             return options['fn']({'exclaim': '?', 'zomg': 'world'}, data=dict(adjective='sad'))
         def _world(this, thing):
-            return '%s %s%s' % (this.data['adjective'], thing, this['exclaim'] or '')
+            return '%s %s%s' % (this.private['adjective'], thing, this['exclaim'] or '')
         helpers = {'hello': _hello, 'world':  _world}
 
         result = template({'exclaim': True, 'zomg': "world"}, helpers=helpers, data={'adjective': "happy"});

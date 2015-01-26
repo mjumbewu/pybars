@@ -215,11 +215,11 @@ sentinel = object()
 
 class Scope:
 
-    def __init__(self, context, parent, root, data=None, overrides=None):
+    def __init__(self, context, parent, root, private=None, overrides=None):
         self.context = context.context if isinstance(context, Scope) else context
         self.parent = parent
         self.root = root
-        self.data = data or {}
+        self.private = private or {}
         # Must be dict of keys and values
         self.overrides = overrides
 
@@ -229,8 +229,8 @@ class Scope:
         if name == '@_parent':
             return self.parent
         if str_class(name).startswith('@'):
-            data_name = name[1:]
-            try: return self.data[data_name]
+            var_name = name[1:]
+            try: return self.private[var_name]
             except KeyError: pass
         if name == 'this':
             return self.context
@@ -258,7 +258,7 @@ class Scope:
         return unicode(self.context)
 
     def __repr__(self):
-        return u'<pybars.Scope context=%r data=%r>' % (self.context, self.data)
+        return u'<pybars.Scope context=%r private=%r>' % (self.context, self.private)
 
 
 def resolve(context, *segments):
@@ -320,17 +320,17 @@ def _each(this, options, context):
 
     index = 0
     for value in context:
-        data = {
+        custom_vars = {
             'index': index,
             'first': index == 0,
             'last': index == last_index
         }
 
         if has_keys:
-            data['key'] = value
+            custom_vars['key'] = value
             value = context[value]
 
-        result.grow(options['fn'](value, data=data))
+        result.grow(options['fn'](value, data=custom_vars))
 
         index += 1
 
@@ -492,6 +492,7 @@ class CodeBuilder:
             u"    options['helpers'] = helpers\n"
             u"    options['partials'] = partials\n"
             u"    options['root'] = root\n"
+            u"    options['data'] = data\n"
             ])
         if alt_nested:
             self._result.grow([
