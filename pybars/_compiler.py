@@ -229,7 +229,9 @@ class Scope:
         if name == '@_parent':
             return self.parent
         if str_class(name).startswith('@'):
-            return self.data.get(name[1:], default)
+            data_name = name[1:]
+            try: return self.data[data_name]
+            except KeyError: pass
         if name == 'this':
             return self.context
 
